@@ -319,13 +319,35 @@ RC RelationManager::insertTuple(const string &tableName, const void *data, RID &
     // need to do work if we have index too
     // find all the indexes on the attributes touched
     vector<IndexID> indexList;
-    getIndexesForTable(tableName, indexList);
+    rc = getIndexesForTable(tableName, indexList);
+    if (rc) 
+        return rc;
 
+    vector<IndexData> dataList;
+    map<string, IndexData> atrList;
+    
+    formatData(recordDescriptor, data, dataList); // returns a list of IndexData for each atr
+    for (IndexData i : dataList) { // fill the hashmap so we can access the lists easier
+        atrList[i.atr.name] = i;
+    }
     // insert into index 
-    // insert entry needs fh, attribute, void*, rid
+    for (IndexID id : indexList) {
+        // insert entry needs fh, attribute, void*, rid
+        IndexData idx = atrList[id.attrName];
+
+    }
+    
     
 
     return rc;
+}
+
+void formatData(const vector<Attribute> &recordDescriptor, const void *data, vector<IndexData> &atrList) {
+    atrList.clear(); // clear the list
+
+    // get the null indicator vector same as before
+    int nullIndicatorSize = getNullIndicatorSize(recordDescriptor.size());
+
 }
 
 RC RelationManager::getIndexesForTable(const string &tableName, vector<IndexID> &indexList){
@@ -409,8 +431,6 @@ RC RelationManager::getIndexesForTable(const string &tableName, vector<IndexID> 
     free(val);
     scanner.close();
     return rc;
-    
-
 }
 
 RC RelationManager::deleteTuple(const string &tableName, const RID &rid)

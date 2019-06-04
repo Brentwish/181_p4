@@ -4,6 +4,8 @@
 
 #include <string>
 #include <vector>
+#include <iostream>
+#include <map>
 
 #include "../ix/ix.h"
 #include "../rbf/rbfm.h"
@@ -72,6 +74,15 @@ typedef struct IndexID
     string attrName;
     RID rid; // needed to get file from indexCatalog table 
 } indexID;
+
+typedef struct IndexData 
+{
+    RID rid;
+    Attribute atr;
+    void *key;
+    bool nullKey;
+} IndexData;
+
 // RM_ScanIterator is an iteratr to go through tuples
 class RM_ScanIterator {
 public:
@@ -158,6 +169,7 @@ protected:
   RelationManager();
   ~RelationManager();
 
+friend class RecordBasedFileManager;
 private:
   static RelationManager *_rm;
   const vector<Attribute> tableDescriptor;
