@@ -1101,11 +1101,12 @@ RC RelationManager::createIndex(const string &tableName, const string &attribute
         return rc;
     
     // need to get attribute to see how big key is and to later determine type 
-    Attribute atr; 
+    Attribute attr; 
     vector<Attribute> atrVec; 
     getAttributes(tableName, atrVec); // get all the attributes
     for (Attribute atr : atrVec) {
         if (atr.name == attributeName){
+            attr = atr;
             break; // found the right one 
         }
     }
