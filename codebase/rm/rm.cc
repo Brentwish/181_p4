@@ -353,7 +353,7 @@ RC RelationManager::insertTuple(const string &tableName, const void *data, RID &
     return rc;
 }
 // get the attributes with their keys as a list 
-void formatData(const vector<Attribute> &recordDescriptor, const void *data, vector<IndexData> &atrList) {
+void RelationManager::formatData(const vector<Attribute> &recordDescriptor, const void *data, vector<IndexData> &atrList) {
     atrList.clear(); // clear the list
 
     // get the null indicator vector same as before
@@ -439,7 +439,7 @@ RC RelationManager::getIndexesForTable(const string &tableName, vector<IndexID> 
         tupleOffset += VARCHAR_LENGTH_SIZE;
 
         char atrName[varLen+1];
-        memcpy(atrName, page + tupleOffset, varLen); // copy in the atr Name 
+        memcpy(atrName, (char*) page + tupleOffset, varLen); // copy in the atr Name 
         atrName[varLen] = '\0';
         tupleOffset += varLen;
 
@@ -1179,4 +1179,16 @@ RC RelationManager::indexScan(const string &tableName,
 	return -1;
 }
 
+// Calculate actual bytes for nulls-indicator for the given field counts
+int RelationManager::getNullIndicatorSize(int fieldCount) 
+{
+    return int(ceil((double) fieldCount / CHAR_BIT));
+}
+
+bool RelationManager::fieldIsNull(char *nullIndicator, int i)
+{
+    int indicatorIndex = i / CHAR_BIT;
+    int indicatorMask  = 1 << (CHAR_BIT - 1 - (i % CHAR_BIT));
+    return (nullIndicator[indicatorIndex] & indicatorMask) != 0;
+}
 

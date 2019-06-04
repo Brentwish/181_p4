@@ -6,6 +6,7 @@
 #include <vector>
 #include <iostream>
 #include <map>
+#include <cmath>
 
 #include "../ix/ix.h"
 #include "../rbf/rbfm.h"
@@ -214,7 +215,9 @@ private:
   void toAPI(const string &str, void *data);
 
   RC getIndexesForTable(const string &tableName, vector<IndexID> &indexList);
-
+  int getNullIndicatorSize(int fieldCount);
+  bool fieldIsNull(char *nullIndicator, int i);
+  void formatData(const vector<Attribute> &recordDescriptor, const void *data, vector<IndexData> &atrList);
 };
 
 #endif
