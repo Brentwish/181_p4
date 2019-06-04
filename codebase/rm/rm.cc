@@ -15,7 +15,7 @@ RelationManager* RelationManager::instance()
 }
 
 RelationManager::RelationManager()
-: tableDescriptor(createTableDescriptor()), columnDescriptor(createColumnDescriptor())
+: tableDescriptor(createTableDescriptor()), columnDescriptor(createColumnDescriptor()), indexDescriptor(createIndexDescriptor())
 {
 }
 
@@ -34,6 +34,7 @@ RC RelationManager::createCatalog()
     rc = rbfm->createFile(getFileName(COLUMNS_TABLE_NAME));
     if (rc)
         return rc;
+    rc = rbfm->createFile(getFileName(INDEXES_TABLE_NAME));
 
     // Add table entries for both Tables and Columns
     rc = insertTable(TABLES_TABLE_ID, 1, TABLES_TABLE_NAME);
@@ -41,6 +42,10 @@ RC RelationManager::createCatalog()
         return rc;
     rc = insertTable(COLUMNS_TABLE_ID, 1, COLUMNS_TABLE_NAME);
     if (rc)
+        return rc;
+    // Add the Index table entry
+    rc = insertTable(INDEXES_TABLE_ID, 1, INDEXES_TABLE_NAME);
+    if (rc) 
         return rc;
 
 
@@ -51,7 +56,9 @@ RC RelationManager::createCatalog()
     rc = insertColumns(COLUMNS_TABLE_ID, columnDescriptor);
     if (rc)
         return rc;
-
+    rc = insertColumns(INDEXES_TABLE_ID, indexDescriptor);
+    if (rc) 
+        return rc;
     return SUCCESS;
 }
 
@@ -67,6 +74,9 @@ RC RelationManager::deleteCatalog()
         return rc;
 
     rc = rbfm->destroyFile(getFileName(COLUMNS_TABLE_NAME));
+    if (rc)
+        return rc;
+    rc = rbfm->destroyFile(getFileName(INDEXES_TABLE_NAME));
     if (rc)
         return rc;
 
@@ -306,7 +316,101 @@ RC RelationManager::insertTuple(const string &tableName, const void *data, RID &
     rc = rbfm->insertRecord(fileHandle, recordDescriptor, data, rid);
     rbfm->closeFile(fileHandle);
 
+    // need to do work if we have index too
+    // find all the indexes on the attributes touched
+    vector<IndexID> indexList;
+    getIndexesForTable(tableName, indexList);
+
+    // insert into index 
+    // insert entry needs fh, attribute, void*, rid
+    
+
     return rc;
+}
+
+RC RelationManager::getIndexesForTable(const string &tableName, vector<IndexID> &indexList){
+    indexList.clear();
+    RC rc;
+    // going to use scan to get all tables with tableName
+    // fill a vector with attribute name, filename, and table name
+    vector<string> columnsWanted {INDEXES_COL_ATTR_NAME, INDEXES_COL_FILE_NAME, INDEXES_COL_TABLE_NAME};
+
+    // create a value for the scan to work 
+    void *val = malloc(tableName.length() + INT_SIZE);
+    toAPI(tableName, val); // make the key like before
+
+    RM_ScanIterator scanner; // iterator object
+    rc = scan(INDEXES_TABLE_NAME, INDEXES_COL_TABLE_NAME, EQ_OP, val, columnsWanted,  scanner);
+    if (rc) 
+        return rc;
+    
+    void *page = malloc(PAGE_SIZE);
+    memset(page, 0 , PAGE_SIZE);
+    RID rid;
+
+    while(true){
+        rc = scanner.getNextTuple(rid, page); // get the next tuple
+        int tupleOffset = 0;
+        if (rc != SUCCESS) {
+            if (rc == RM_EOF){ // if at the end 
+                rc = SUCCESS;
+                break;
+            }
+        }
+
+        char nullChar = 0; 
+        memcpy(&nullChar, page, 1); // check if null
+        if (nullChar) {
+            rc = RM_INVALID_COLUMN;
+            break;
+        }
+        tupleOffset++;
+
+        // fill in the indexID with the correct values
+        IndexID id;
+
+        int varLen;
+        memcpy(&varLen, (char*) page + tupleOffset, VARCHAR_LENGTH_SIZE); // do for the attribute name first 
+        tupleOffset += VARCHAR_LENGTH_SIZE;
+
+        char atrName[varLen+1];
+        memcpy(atrName, page + tupleOffset, varLen); // copy in the atr Name 
+        atrName[varLen] = '\0';
+        tupleOffset += varLen;
+
+        memcpy(&varLen, (char*)page + tupleOffset, VARCHAR_LENGTH_SIZE); // get size of filename
+        tupleOffset += VARCHAR_LENGTH_SIZE;
+
+        char fileName[varLen+1];
+        memcpy(fileName, (char*) page + tupleOffset, varLen); // copy in the fileName
+        fileName[varLen] = '\0';
+        tupleOffset += varLen;
+
+        memcpy(&varLen, (char*) page + tupleOffset, VARCHAR_LENGTH_SIZE); // get the size of tableName
+        tupleOffset += VARCHAR_LENGTH_SIZE;
+
+        char tableName[varLen+1];
+        memcpy(tableName, (char*)page + tupleOffset, varLen); // copy in the tableName
+        tableName[varLen] = '\0';
+        tupleOffset += varLen;
+
+        // fill in the indexId struct
+        id.attrName = atrName;
+        id.fileName = fileName;
+        id.tableName = tableName;
+        id.rid = rid;
+
+        // append to the indexList
+        indexList.push_back(id);
+    }
+
+    // clean up the memory
+    free(page);
+    free(val);
+    scanner.close();
+    return rc;
+    
+
 }
 
 RC RelationManager::deleteTuple(const string &tableName, const RID &rid)
@@ -433,6 +537,10 @@ string RelationManager::getFileName(const string &tableName)
     return tableName + string(TABLE_FILE_EXTENSION);
 }
 
+string RelationManager::getIndexName(const string &tName, const string &atrName){
+    return atrName + "Of" + tName + string(INDEX_FILE_EXTENSION); 
+}
+
 vector<Attribute> RelationManager::createTableDescriptor()
 {
     vector<Attribute> td;
@@ -492,6 +600,66 @@ vector<Attribute> RelationManager::createColumnDescriptor()
     cd.push_back(attr);
 
     return cd;
+}
+
+// create it for the index 
+// needs table name, attribute the index is on, and the file name for that index
+vector<Attribute> RelationManager::createIndexDescriptor()
+{
+    vector<Attribute> id;
+
+    Attribute attr;
+    attr.name = INDEXES_COL_TABLE_NAME;
+    attr.type = TypeVarChar;
+    attr.length = (AttrLength)INDEXES_COL_TABLE_NAME_SIZE;
+    id.push_back(attr);
+
+    attr.name = INDEXES_COL_ATTR_NAME;
+    attr.type = TypeVarChar;
+    attr.length = (AttrLength)INDEXES_COL_ATTR_NAME_SIZE;
+    id.push_back(attr);
+
+    // used to identify the index file that contains that index 
+    attr.name = INDEXES_COL_FILE_NAME;;
+    attr.type = TypeInt;
+    attr.length = (AttrLength)INDEXES_COL_FILE_NAME_SIZE;
+    id.push_back(attr);
+    return id;
+}
+
+// based off of prepareTablesRecordData
+void RelationManager::prepareIndexRecordData(const string &tableName, const string &attributeName, void *indexPage) {
+    string fName = getIndexName(tableName, attributeName); // used to calculate the filename length
+
+    unsigned offset = 0;
+    int32_t tableLength = tableName.length();
+    int32_t attributeLength = attributeName.length();
+    int32_t filenameLength = fName.length();
+
+    char null = 0;
+
+    memcpy((char*) indexPage + offset, &null, 1); // place null in 
+    offset += 1;
+
+    // place the table name into the page 
+    memcpy((char*) indexPage + offset, &tableLength, VARCHAR_LENGTH_SIZE);
+    offset += VARCHAR_LENGTH_SIZE;
+    memcpy((char*) indexPage + offset, tableName.c_str(), tableLength);
+    offset += tableLength;
+
+    // place the attribute name afterwards
+    memcpy((char*) indexPage + offset, &attributeLength, VARCHAR_LENGTH_SIZE);
+    offset += VARCHAR_LENGTH_SIZE;
+    memcpy((char*) indexPage + offset, attributeName.c_str(), attributeLength);
+    offset += attributeLength;
+
+    // finally place the filename into the record 
+    memcpy((char*) indexPage + offset, &filenameLength, VARCHAR_LENGTH_SIZE);
+    offset += VARCHAR_LENGTH_SIZE;
+    memcpy((char*) indexPage + offset, fName.c_str(), filenameLength);
+    offset += filenameLength;
+
+    // page is filled so done 
 }
 
 // Creates the Tables table entry for the given id and tableName
@@ -856,10 +1024,80 @@ RC RM_ScanIterator::close()
     return SUCCESS;
 }
 
-
+// based off of createTable
 RC RelationManager::createIndex(const string &tableName, const string &attributeName)
 {
-	return -1;
+	IndexManager *im = IndexManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    string fName = getIndexName(tableName, attributeName);
+    RID rid;
+    RC rc;
+
+    rc = im->createFile(fName);
+    if (rc) 
+        return rc;
+    
+    // need to get attribute to see how big key is and to later determine type 
+    Attribute atr; 
+    vector<Attribute> atrVec; 
+    getAttributes(tableName, atrVec); // get all the attributes
+    for (Attribute atr : atrVec) {
+        if (atr.name == attributeName){
+            break; // found the right one 
+        }
+    }
+
+    IXFileHandle ixfh; // needed to open a file and handle it
+    rc = im->openFile(fName, ixfh);
+    if (rc) 
+        return rc;
+
+    // need to get all the records and only the attribute for this index 
+    vector<string> scanAttr;
+    scanAttr.push_back(attributeName); // this is the attribute that will be returned from scan
+    RM_ScanIterator scanner; // scanner used to go through a table 
+    scan(tableName, "", NO_OP, NULL, scanAttr, scanner); // NO OP because we want all tuples
+    
+    void *data = malloc(atr.length + 10); // for the null terminator in a string
+    memset(data, 0, atr.length + 10); // clear the data 
+
+    while(true) { // iterate through the table
+        rc = scanner.getNextTuple(rid, data);
+        if (rc == IX_EOF) { // if at the end then everything is fine  and done
+            rc = 0;
+            break;
+        } 
+        if(data == NULL) { // if the attr is null for this tuple 
+            continue;
+        }
+        rc = im->insertEntry(ixfh, atr, (char*) data + 1, rid); // insert into the index 
+        if (rc) // error then break
+            break;
+    }
+
+    // clear all the memory
+    free(data);
+    im->closeFile(ixfh);
+    scanner.close();
+    if (rc != SUCCESS) 
+        return rc;
+
+    
+    // finally add index to the catalog
+    FileHandle fh; // used to get the INDEX TABLE FILE
+    rc = rbfm->openFile(getFileName(INDEXES_TABLE_NAME), fh);
+    if (rc)
+        return rc;
+
+    void *page = malloc(PAGE_SIZE);
+    memset(page, 0, PAGE_SIZE);
+    prepareIndexRecordData(tableName, attributeName, page); // create a record for the new index
+    rc = rbfm->insertRecord(fh, indexDescriptor, page, rid); // rid now contains the new record
+    if (rc) 
+        return rc;
+    free(page);
+
+    return rc;
 }
 
 RC RelationManager::destroyIndex(const string &tableName, const string &attributeName)

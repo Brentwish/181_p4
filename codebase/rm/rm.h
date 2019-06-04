@@ -5,11 +5,13 @@
 #include <string>
 #include <vector>
 
+#include "../ix/ix.h"
 #include "../rbf/rbfm.h"
 
 using namespace std;
 
 #define TABLE_FILE_EXTENSION ".t"
+#define INDEX_FILE_EXTENSION ".idx"
 
 #define TABLES_TABLE_NAME           "Tables"
 #define TABLES_TABLE_ID             1
@@ -38,6 +40,16 @@ using namespace std;
 #define COLUMNS_COL_COLUMN_POSITION  "column-position"
 #define COLUMNS_COL_COLUMN_NAME_SIZE 50
 
+#define INDEXES_TABLE_NAME          "Indexes"
+#define INDEXES_TABLE_ID             3
+
+#define INDEXES_COL_TABLE_NAME      "table-name"
+#define INDEXES_COL_FILE_NAME_SIZE  50
+#define INDEXES_COL_ATTR_NAME_SIZE  50
+#define INDEXES_COL_TABLE_NAME_SIZE 50
+#define INDEXES_COL_ATTR_NAME       "attr-name"
+#define INDEXES_COL_FILE_NAME       "file-name"
+
 // 1 null byte, 4 integer fields and a varchar
 #define COLUMNS_RECORD_DATA_SIZE 1 + 5 * INT_SIZE + COLUMNS_COL_COLUMN_NAME_SIZE
 
@@ -45,6 +57,7 @@ using namespace std;
 
 #define RM_CANNOT_MOD_SYS_TBL 1
 #define RM_NULL_COLUMN        2
+#define RM_INVALID_COLUMN     3
 
 typedef struct IndexedAttr
 {
@@ -52,6 +65,13 @@ typedef struct IndexedAttr
     Attribute attr;
 } IndexedAttr;
 
+typedef struct IndexID 
+{
+    string fileName;
+    string tableName;
+    string attrName;
+    RID rid; // needed to get file from indexCatalog table 
+} indexID;
 // RM_ScanIterator is an iteratr to go through tuples
 class RM_ScanIterator {
 public:
@@ -87,21 +107,21 @@ class RelationManager
 public:
   static RelationManager* instance();
 
-  RC createCatalog();
+  RC createCatalog(); // make sure to add the index table 
 
-  RC deleteCatalog();
+  RC deleteCatalog(); // make sure to delete the index table
 
   RC createTable(const string &tableName, const vector<Attribute> &attrs);
 
-  RC deleteTable(const string &tableName);
+  RC deleteTable(const string &tableName); // make sure we delete indexes on tables too
 
   RC getAttributes(const string &tableName, vector<Attribute> &attrs);
 
-  RC insertTuple(const string &tableName, const void *data, RID &rid);
+  RC insertTuple(const string &tableName, const void *data, RID &rid); // make sure to update index
 
-  RC deleteTuple(const string &tableName, const RID &rid);
+  RC deleteTuple(const string &tableName, const RID &rid); // make sure to update index
 
-  RC updateTuple(const string &tableName, const void *data, const RID &rid);
+  RC updateTuple(const string &tableName, const void *data, const RID &rid); // make sure to update index
 
   RC readTuple(const string &tableName, const RID &rid, void *data);
 
@@ -142,18 +162,22 @@ private:
   static RelationManager *_rm;
   const vector<Attribute> tableDescriptor;
   const vector<Attribute> columnDescriptor;
+  const vector<Attribute> indexDescriptor; // similar as above
 
   // Convert tableName to file name (append extension)
   static string getFileName(const char *tableName);
   static string getFileName(const string &tableName);
+  static string getIndexName(const string &tName, const string &atrName);
 
   // Create recordDescriptor for Table/Column tables
   static vector<Attribute> createTableDescriptor();
   static vector<Attribute> createColumnDescriptor();
+  static vector<Attribute> createIndexDescriptor();
 
   // Prepare an entry for the Table/Column table
   void prepareTablesRecordData(int32_t id, bool system, const string &tableName, void *data);
   void prepareColumnsRecordData(int32_t id, int32_t pos, Attribute attr, void *data);
+  void prepareIndexRecordData(const string &tableName, const string &attributeName, void *indexPage);
 
   // Given a table ID and recordDescriptor, creates entries in Column table
   RC insertColumns(int32_t id, const vector<Attribute> &recordDescriptor);
@@ -177,6 +201,8 @@ private:
   void toAPI(const float real, void *data);
   void toAPI(const int32_t integer, void *data);
   void toAPI(const string &str, void *data);
+
+  RC getIndexesForTable(const string &tableName, vector<IndexID> &indexList);
 
 };
 
