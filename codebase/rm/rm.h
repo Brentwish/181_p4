@@ -77,7 +77,6 @@ typedef struct IndexID
 
 typedef struct IndexData 
 {
-    RID rid;
     Attribute atr;
     void *key;
     bool nullKey;

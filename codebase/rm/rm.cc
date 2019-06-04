@@ -290,6 +290,7 @@ RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &at
 RC RelationManager::insertTuple(const string &tableName, const void *data, RID &rid)
 {
     RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    IndexManager *im = IndexManager::instance();
     RC rc;
 
     // If this is a system table, we cannot modify it
@@ -334,20 +335,62 @@ RC RelationManager::insertTuple(const string &tableName, const void *data, RID &
     for (IndexID id : indexList) {
         // insert entry needs fh, attribute, void*, rid
         IndexData idx = atrList[id.attrName];
-
+        if (idx.nullKey) // skip if null 
+            continue;
+        
+        IXFileHandle ixfh;
+        // open the file first then insert then close to write it 
+        rc = im->openFile(id.fileName, ixfh);
+        if (rc) 
+            return rc;
+        rc = im->insertEntry(ixfh, idx.atr, idx.key, rid); // insert the rid and key into the index
+        if (rc) 
+            return rc;
+        rc = im->closeFile(ixfh);
+        if (rc) 
+            return rc;
     }
-    
-    
-
     return rc;
 }
-
+// get the attributes with their keys as a list 
 void formatData(const vector<Attribute> &recordDescriptor, const void *data, vector<IndexData> &atrList) {
     atrList.clear(); // clear the list
 
     // get the null indicator vector same as before
     int nullIndicatorSize = getNullIndicatorSize(recordDescriptor.size());
+    char nullIndicator[nullIndicatorSize];
+    memset(nullIndicator, 0, nullIndicatorSize);
+    memcpy(nullIndicator,(char*) data, nullIndicatorSize); // got the null indicators
 
+    unsigned offset = nullIndicatorSize;
+
+    for (unsigned i =0; i < recordDescriptor.size(); i++) {
+        IndexData id;
+        id.atr = recordDescriptor[i]; // fill in the attribute
+        id.nullKey = fieldIsNull(nullIndicator, i); // fill in if its null
+        if (fieldIsNull(nullIndicator, i)) { // if it's null
+            id.key = NULL;
+            atrList.push_back(id); // go to next one b/c no need to push data 
+            continue;
+        }
+        // atr is not null 
+        id.key = (char*) data + offset; // point to where the atr starts
+
+        if (id.atr.type == TypeInt) {
+            offset += INT_SIZE;
+        }
+        else if (id.atr.type == TypeReal) {
+            offset += REAL_SIZE;
+        }
+        else if (id.atr.type == TypeVarChar) {
+            // calculate len of varChar then move forward that much
+            int varLen;
+            memcpy(&varLen, (char*) data + offset, VARCHAR_LENGTH_SIZE); // get the size 
+            offset += VARCHAR_LENGTH_SIZE;
+            offset += varLen;
+        }
+        atrList.push_back(id); // append to the atrList
+    }
 }
 
 RC RelationManager::getIndexesForTable(const string &tableName, vector<IndexID> &indexList){
