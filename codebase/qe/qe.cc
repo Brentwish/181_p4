@@ -35,7 +35,6 @@ RC Filter::getNextTuple(void *data) {
         //If the tuple passes the check, return
         if (include(data))
             return SUCCESS;
-        cout << "Skipped\n";
     }
     return -1;
 }
@@ -45,9 +44,7 @@ int compareInts(CompOp op, int left, int right) {
         case EQ_OP: return (left == right) ? 1 : 0;
         case LT_OP: return (left < right) ? 1 : 0;
         case GT_OP: return (left > right) ? 1 : 0;
-        case LE_OP:
-            cout << left << ", " << right << endl;
-            return (left <= right) ? 1 : 0;
+        case LE_OP: return (left <= right) ? 1 : 0;
         case GE_OP: return (left >= right) ? 1 : 0;
         case NE_OP: return (left != right) ? 1 : 0;
         case NO_OP: return 1;
@@ -55,9 +52,33 @@ int compareInts(CompOp op, int left, int right) {
     }
 }
 
+int compareReals(CompOp op, float left, float right) {
+    switch (op) {
+        case EQ_OP: return (left == right) ? 1 : 0;
+        case LT_OP: return (left < right) ? 1 : 0;
+        case GT_OP: return (left > right) ? 1 : 0;
+        case LE_OP: return (left <= right) ? 1 : 0;
+        case GE_OP: return (left >= right) ? 1 : 0;
+        case NE_OP: return (left != right) ? 1 : 0;
+        case NO_OP: return 1;
+        default: return -1;
+    }
+}
+
+int compareVarChars(CompOp op, char *left, char *right) {
+    switch (op) {
+        case EQ_OP: return (strcmp(left, right) == 0) ? 1 : 0;
+        case LT_OP: return (strcmp(left, right) < 0) ? 1 : 0;
+        case GT_OP: return (strcmp(left, right) > 0) ? 1 : 0;
+        case LE_OP: return (strcmp(left, right) <= 0) ? 1 : 0;
+        case GE_OP: return (strcmp(left, right) >= 0) ? 1 : 0;
+        case NE_OP: return (strcmp(left, right) != 0) ? 1 : 0;
+        case NO_OP: return 1;
+        default: return -1;
+    }
+}
+
 int Filter::include(void *data) {
-    RelationManager *rm = RelationManager::instance();
-    rm->printTuple(attrs, data);
     //We need to iterate through (data, attrs) until we find the attr
     //we are comparing on
     int nullSize = getNullIndicatorSize(attrs.size());
@@ -75,6 +96,10 @@ int Filter::include(void *data) {
         if (fieldIsNull(nullField, i)) //data holds nothing
             continue;
 
+        //Once we find the attr we care about, break
+        if (attr.name == cond.lhsAttr)
+            break;
+
         switch (attr.type) {
             case TypeInt: offset += INT_SIZE;
                 break;
@@ -86,21 +111,12 @@ int Filter::include(void *data) {
                 offset += INT_SIZE + size;
                 break;
         }
-
-        //Once we find the attr we care about, break
-        if (attr.name == cond.lhsAttr)
-            break;
     }
 
     //Copy the attribute into val
     Value val;
     val.type = attr.type;
     val.data = (char *)data + offset;
-
-    int test = 0;
-
-    memcpy(&test, val.data, INT_SIZE);
-    cout << test << endl;
 
     switch (val.type) {
         case TypeInt: {
@@ -117,7 +133,7 @@ int Filter::include(void *data) {
             memcpy(&leftFval, val.data, REAL_SIZE);
             memcpy(&rightFval, cond.rhsValue.data, REAL_SIZE);
 
-            //return compareReals(cond.op, leftFval, rightFval);
+            return compareReals(cond.op, leftFval, rightFval);
             return 1;
         }
         case TypeVarChar: {
@@ -134,7 +150,7 @@ int Filter::include(void *data) {
             memcpy(leftSval, (char *) val.data + VARCHAR_LENGTH_SIZE, leftSize);
             memcpy(rightSval, (char *) cond.rhsValue.data + VARCHAR_LENGTH_SIZE, rightSize);
 
-            //return compareVarChars(cond.op, leftSval, rightSval);
+            return compareVarChars(cond.op, leftSval, rightSval);
             return 1;
         }
     }
