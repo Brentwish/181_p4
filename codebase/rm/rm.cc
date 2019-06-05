@@ -1378,7 +1378,7 @@ RC RelationManager::indexScan(const string &tableName,
 // "key" follows the same format as in IndexManager::insertEntry()
 RC RM_IndexScanIterator::getNextEntry(RID &rid, void *key)// Get next matching entry
 {
-    ix_scan.getNextEntry(rid,key); // just use indexManager getNextEntry since we use their scanner anyways
+    return ix_scan.getNextEntry(rid,key); // just use indexManager getNextEntry since we use their scanner anyways
 }
 RC RM_IndexScanIterator::close()
 {
