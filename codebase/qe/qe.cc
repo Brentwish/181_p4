@@ -134,7 +134,6 @@ int Filter::include(void *data) {
             memcpy(&rightFval, cond.rhsValue.data, REAL_SIZE);
 
             return compareReals(cond.op, leftFval, rightFval);
-            return 1;
         }
         case TypeVarChar: {
             int leftSize = 0;
@@ -151,7 +150,6 @@ int Filter::include(void *data) {
             memcpy(rightSval, (char *) cond.rhsValue.data + VARCHAR_LENGTH_SIZE, rightSize);
 
             return compareVarChars(cond.op, leftSval, rightSval);
-            return 1;
         }
     }
     return -1;
