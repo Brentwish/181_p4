@@ -1331,6 +1331,10 @@ RC RelationManager::destroyIndex(const string &tableName, const string &attribut
         rbfm->closeFile(fh); 
     }
 
+    // destroy the file 
+    rc = im->destroyFile(fName);
+    if (rc)
+        return rc;
     free(data);
     free(val);
     scanner.close();
