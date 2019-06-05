@@ -41,12 +41,12 @@ RC Filter::getNextTuple(void *data) {
 
 int compareInts(CompOp op, int left, int right) {
     switch (op) {
-        case EQ_OP: return (left == right) ? 1 : 0;
-        case LT_OP: return (left < right) ? 1 : 0;
-        case GT_OP: return (left > right) ? 1 : 0;
-        case LE_OP: return (left <= right) ? 1 : 0;
-        case GE_OP: return (left >= right) ? 1 : 0;
-        case NE_OP: return (left != right) ? 1 : 0;
+        case EQ_OP: return left == right;
+        case LT_OP: return left < right;
+        case GT_OP: return left > right;
+        case LE_OP: return left <= right;
+        case GE_OP: return left >= right;
+        case NE_OP: return left != right;
         case NO_OP: return 1;
         default: return -1;
     }
@@ -54,12 +54,12 @@ int compareInts(CompOp op, int left, int right) {
 
 int compareReals(CompOp op, float left, float right) {
     switch (op) {
-        case EQ_OP: return (left == right) ? 1 : 0;
-        case LT_OP: return (left < right) ? 1 : 0;
-        case GT_OP: return (left > right) ? 1 : 0;
-        case LE_OP: return (left <= right) ? 1 : 0;
-        case GE_OP: return (left >= right) ? 1 : 0;
-        case NE_OP: return (left != right) ? 1 : 0;
+        case EQ_OP: return left == right;
+        case LT_OP: return left < right;
+        case GT_OP: return left > right;
+        case LE_OP: return left <= right;
+        case GE_OP: return left >= right;
+        case NE_OP: return left != right;
         case NO_OP: return 1;
         default: return -1;
     }
