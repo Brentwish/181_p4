@@ -1346,7 +1346,43 @@ RC RelationManager::indexScan(const string &tableName,
                       bool highKeyInclusive,
                       RM_IndexScanIterator &rm_IndexScanIterator)
 {
-	return -1;
+	// index scan needs: filehandle, attribute, lowKey, highkey, boolHKey, boolLKey, ixscanIter
+    IndexManager *im = IndexManager::instance(); // needed to do index scan
+    RC rc;
+    // based on previous implementations
+    // get the file name for the index and open it
+    // use the indexScanners file handler
+    rc = im->openFile(getIndexName(tableName, attributeName), rm_IndexScanIterator.ixfh);
+    if (rc) 
+        return rc;
+
+    // get the attribute to scan on
+    Attribute atr; 
+    vector<Attribute> atrVec; 
+    getAttributes(tableName, atrVec); // get all the attributes
+    for (Attribute attr : atrVec) {
+        if (atr.name == attributeName){
+            atr = attr;
+            break; // found the right one 
+        }
+    } // now we have the right attr
+
+    rc = im->scan(rm_IndexScanIterator.ixfh, atr, lowKey, highKey, lowKeyInclusive, highKeyInclusive, rm_IndexScanIterator.ix_scan);
+    return rc;
+}
+
+// "key" follows the same format as in IndexManager::insertEntry()
+RC RM_IndexScanIterator::getNextEntry(RID &rid, void *key)// Get next matching entry
+{
+    ix_scan.getNextEntry(rid,key); // just use indexManager getNextEntry since we use their scanner anyways
+}
+RC RM_IndexScanIterator::close()
+{
+    // make sure to close the scanner and filehandle
+    ix_scan.close();
+    IndexManager *im = IndexManager::instance();
+    im->closeFile(ixfh);
+    return SUCCESS;
 }
 
 // Calculate actual bytes for nulls-indicator for the given field counts

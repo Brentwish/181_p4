@@ -108,7 +108,13 @@ class RM_IndexScanIterator {
 
   // "key" follows the same format as in IndexManager::insertEntry()
   RC getNextEntry(RID &rid, void *key) {return RM_EOF;};  	// Get next matching entry
-  RC close() {return -1;};             			// Terminate index scan
+  RC close() {return -1;};             			// Terminate index scan'
+  friend class RelationManager;
+  private: 
+    // similar to how we did for pfm and rbfm
+    // may need more
+    IXFileHandle ixfh;
+    IX_ScanIterator ix_scan;
 };
 
 
@@ -170,6 +176,7 @@ protected:
   ~RelationManager();
 
 friend class RecordBasedFileManager;
+friend class RM_IndexScanIterator;
 private:
   static RelationManager *_rm;
   const vector<Attribute> tableDescriptor;
