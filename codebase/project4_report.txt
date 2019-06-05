@@ -1,7 +1,7 @@
 1. Basic information
 Team number (e.g., 01) : 
-#1 Student ID : 
-#1 Student Name : 
+#1 Student ID : 1477888
+#1 Student Name : Jaisal Singh
 #2 Student ID : 
 #2 Student Name : 
 #3 Student ID : 
@@ -10,7 +10,35 @@ Team number (e.g., 01) :
 
 2. Catalog information about Index
 - Show what catalog information you store for an index. 
-
+  For the index we first additionally create another meta table for the indexes. This causes another table to be inserted during creation. 
+  The TABLES table would look something like this at the beginning. 
+  _____________________________
+  |TABLES|COLUMNS|INDEXES|    |
+  |                           |
+  |                           |
+  |                           |
+  |                           |
+  _____________________________
+  The COLUMNS table is also inserted into. So it becomes something like this, 
+   _________________________________
+  |TABLES COLUMNS |COLUMNS COLUMNS |
+  ||INDEXES COLUMNS |              |
+  |                                |
+  |                                |
+  |                                |
+  __________________________________
+  
+ And finally we have the INDEXES table. 
+  _________________________________
+  |TABLE NAME |   ATTRIBUTE NAME   |
+  |FILE NAME |                     |
+  |                                |
+  |                                |
+  |                                |
+  __________________________________
+  
+  We decided to store those three because it allowed us to create a unique index name based on the table and attribute it was on since there couldn't be two of the same indexes. The sizes for the columns were the same as before. 
+  Whenever we would delete a table we would need to go to the INDEXES table and remove all the indexes that are associated with that table. This table helps us destroy the indexes easily and efficiently. 
 
 3. Index Nested Loop Join
 - Describe how your Index Nested Loop Join works.

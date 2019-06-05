@@ -25,7 +25,7 @@ RelationManager::~RelationManager()
 
 RC RelationManager::createCatalog()
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     // Create both tables and columns tables, return error if either fails
     RC rc;
     rc = rbfm->createFile(getFileName(TABLES_TABLE_NAME));
@@ -65,7 +65,7 @@ RC RelationManager::createCatalog()
 // Just delete the the two catalog files
 RC RelationManager::deleteCatalog()
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
 
     RC rc;
 
@@ -86,7 +86,7 @@ RC RelationManager::deleteCatalog()
 RC RelationManager::createTable(const string &tableName, const vector<Attribute> &attrs)
 {
     RC rc;
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
 
     // Create the rbfm file to store the table
     if ((rc = rbfm->createFile(getFileName(tableName))))
@@ -113,7 +113,7 @@ RC RelationManager::createTable(const string &tableName, const vector<Attribute>
 
 RC RelationManager::deleteTable(const string &tableName)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     RC rc;
 
     // If this is a system table, we cannot delete it
@@ -180,13 +180,25 @@ RC RelationManager::deleteTable(const string &tableName)
     rbfm->closeFile(fileHandle);
     rbfm_si.close();
 
+    // need to delete all the indexes on this table too 
+    vector<IndexID> indexList;
+    rc = getIndexesForTable(tableName, indexList); // get the indexes associated with this table
+    if (rc) 
+        return rc;
+    
+    rbfm->openFile(getFileName(INDEXES_TABLE_NAME), fileHandle); // open the file with all the indexList and their filename
+    for(IndexID id : indexList) { // go through each index and destroy it 
+        destroyIndex(tableName, id.attrName); 
+    }
+
+
     return SUCCESS;
 }
 
 // Fills the given attribute vector with the recordDescriptor of tableName
 RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &attrs)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     // Clear out any old values
     attrs.clear();
     RC rc;
@@ -289,8 +301,8 @@ RC RelationManager::getAttributes(const string &tableName, vector<Attribute> &at
 
 RC RelationManager::insertTuple(const string &tableName, const void *data, RID &rid)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
-    IndexManager *im = IndexManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
+    IndexManager *im = IndexManager::instance(); 
     RC rc;
 
     // If this is a system table, we cannot modify it
@@ -326,7 +338,7 @@ RC RelationManager::insertTuple(const string &tableName, const void *data, RID &
 
     vector<IndexData> dataList;
     map<string, IndexData> atrList;
-    
+    // data must be of record type with null identifier at the beginning
     formatData(recordDescriptor, data, dataList); // returns a list of IndexData for each atr
     for (IndexData i : dataList) { // fill the hashmap so we can access the lists easier
         atrList[i.atr.name] = i;
@@ -478,7 +490,8 @@ RC RelationManager::getIndexesForTable(const string &tableName, vector<IndexID> 
 
 RC RelationManager::deleteTuple(const string &tableName, const RID &rid)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
+    IndexManager *im = IndexManager::instance();
     RC rc;
 
     // If this is a system table, we cannot modify it
@@ -505,12 +518,51 @@ RC RelationManager::deleteTuple(const string &tableName, const RID &rid)
     rc = rbfm->deleteRecord(fileHandle, recordDescriptor, rid);
     rbfm->closeFile(fileHandle);
 
+    // same as insert but with delete 
+    // need to do work if we have index too
+    // find all the indexes on the attributes touched
+    vector<IndexID> indexList;
+    rc = getIndexesForTable(tableName, indexList);
+    if (rc) 
+        return rc;
+
+    vector<IndexData> dataList;
+    map<string, IndexData> atrList;
+    // data must be of record type with null identifier at the beginning
+    void *data = malloc(PAGE_SIZE);
+    memset(data, 0 , PAGE_SIZE);
+    rbfm->readRecord(fileHandle, recordDescriptor, rid, data); // get the record into data 
+    formatData(recordDescriptor, data, dataList); // returns a list of IndexData for each atr
+    for (IndexData i : dataList) { // fill the hashmap so we can access the lists easier
+        atrList[i.atr.name] = i;
+    }
+    // delete into index 
+    for (IndexID id : indexList) {
+        // delete entry needs fh, attribute, void*, rid
+        IndexData idx = atrList[id.attrName];
+        if (idx.nullKey) // skip if null 
+            continue;
+        
+        IXFileHandle ixfh;
+        // open the file first then insert then close to write it 
+        rc = im->openFile(id.fileName, ixfh);
+        if (rc) 
+            return rc;
+        rc = im->deleteEntry(ixfh, idx.atr, idx.key, rid); // delete the rid and key into the index
+        if (rc) 
+            return rc;
+        rc = im->closeFile(ixfh);
+        if (rc) 
+            return rc;
+    }
+    free(data);
     return rc;
 }
 
 RC RelationManager::updateTuple(const string &tableName, const void *data, const RID &rid)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
+    IndexManager *im = IndexManager::instance();
     RC rc;
 
     // If this is a system table, we cannot modify it
@@ -536,13 +588,93 @@ RC RelationManager::updateTuple(const string &tableName, const void *data, const
     // Let rbfm do all the work
     rc = rbfm->updateRecord(fileHandle, recordDescriptor, data, rid);
     rbfm->closeFile(fileHandle);
+    
+    rc = rbfm->openFile(getFileName(tableName), fileHandle); // open table file 
+    if (rc) 
+        return rc;
+    // need to do work if we have index too
+    // find all the indexes on the attributes touched
+    vector<IndexID> indexList;
+    rc = getIndexesForTable(tableName, indexList);
+    if (rc) 
+        return rc;
 
+    vector<IndexData> dataList;
+    map<string, IndexData> atrList;
+    formatData(recordDescriptor, data, dataList); // returns a list of IndexData for each atr
+
+    // original Data  must be of record type with null identifier at the beginning
+    vector<IndexData> originalList;
+    map<string, IndexData> origMap;
+    void *originalRecord = malloc(PAGE_SIZE);
+    rbfm->readRecord(fileHandle, recordDescriptor, rid, originalRecord); // read into origRecord
+    formatData(recordDescriptor, originalRecord, originalList);// get all attributes for the associated original record 
+
+    for (IndexData i : dataList) { // fill the hashmap so we can access the lists easier
+        atrList[i.atr.name] = i;
+    }
+
+    for (IndexData i : originalList) { // fill the hashmap so we can access the lists easier
+        origMap[i.atr.name] = i;
+    }
+    // insert into index 
+    for (IndexID id : indexList) {
+        // insert entry needs fh, attribute, void*, rid
+        
+        IXFileHandle ixfh;
+        // open the file first then insert then close to write it 
+        rc = im->openFile(id.fileName, ixfh);
+        if (rc)
+            return rc;
+
+        IndexData idx = atrList[id.attrName]; // new attribute
+        IndexData origIdx = origMap[id.attrName]; // original attribute
+        // multiple cases since no updateEntry 
+        // 1. Original is null so was never in index
+        if (origIdx.nullKey) {
+            // check if new is null 
+            if (idx.nullKey) { // new is null
+                rc = im->closeFile(ixfh); // close file and open new one next loop
+                if (rc) 
+                    return rc;
+                continue;
+            }
+            else { // new is not null
+                rc = im->insertEntry(ixfh, idx.atr, idx.key, rid); // insert
+                if (rc) 
+                    return rc;
+            }
+        }
+        else // original not null
+        {
+            // must delete old entry 
+            rc = im->deleteEntry(ixfh, origIdx.atr, origIdx.key, rid);
+            if (rc) 
+                return rc;
+            // still need to check and insert new entry
+            if (idx.nullKey) { // new is null
+                rc = im->closeFile(ixfh); // close file and open new one next loop
+                if (rc) 
+                    return rc;
+                continue;
+            }
+            else { // new is not null
+                rc = im->insertEntry(ixfh, idx.atr, idx.key, rid); // insert
+                if (rc) 
+                    return rc;
+            }
+        }
+        rc = im->closeFile(ixfh); // close file and open new one next loop
+        if (rc) 
+            return rc;
+    }
+    free(originalRecord); // free memory and return
     return rc;
 }
 
 RC RelationManager::readTuple(const string &tableName, const RID &rid, void *data)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     RC rc;
 
     // Get record descriptor
@@ -566,13 +698,13 @@ RC RelationManager::readTuple(const string &tableName, const RID &rid, void *dat
 // Let rbfm do all the work
 RC RelationManager::printTuple(const vector<Attribute> &attrs, const void *data)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     return rbfm->printRecord(attrs, data);
 }
 
 RC RelationManager::readAttribute(const string &tableName, const RID &rid, const string &attributeName, void *data)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     RC rc;
 
     vector<Attribute> recordDescriptor;
@@ -798,7 +930,7 @@ RC RelationManager::insertColumns(int32_t id, const vector<Attribute> &recordDes
 {
     RC rc;
 
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
 
     FileHandle fileHandle;
     rc = rbfm->openFile(getFileName(COLUMNS_TABLE_NAME), fileHandle);
@@ -826,7 +958,7 @@ RC RelationManager::insertTable(int32_t id, int32_t system, const string &tableN
     FileHandle fileHandle;
     RID rid;
     RC rc;
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
 
     rc = rbfm->openFile(getFileName(TABLES_TABLE_NAME), fileHandle);
     if (rc)
@@ -844,7 +976,7 @@ RC RelationManager::insertTable(int32_t id, int32_t system, const string &tableN
 // Get the next table ID for creating a table
 RC RelationManager::getNextTableID(int32_t &table_id)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     FileHandle fileHandle;
     RC rc;
 
@@ -886,7 +1018,7 @@ RC RelationManager::getNextTableID(int32_t &table_id)
 // Gets the table ID of the given tableName
 RC RelationManager::getTableID(const string &tableName, int32_t &tableID)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     FileHandle fileHandle;
     RC rc;
 
@@ -928,7 +1060,7 @@ RC RelationManager::getTableID(const string &tableName, int32_t &tableID)
 // Determine if table tableName is a system table. Set the boolean argument as the result
 RC RelationManager::isSystemTable(bool &system, const string &tableName)
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     FileHandle fileHandle;
     RC rc;
 
@@ -1052,7 +1184,7 @@ RC RelationManager::scan(const string &tableName,
       RM_ScanIterator &rm_ScanIterator)
 {
     // Open the file for the given tableName
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     RC rc = rbfm->openFile(getFileName(tableName), rm_ScanIterator.fileHandle);
     if (rc)
         return rc;
@@ -1081,7 +1213,7 @@ RC RM_ScanIterator::getNextTuple(RID &rid, void *data)
 // Close our file handle, rbfm_scaniterator
 RC RM_ScanIterator::close()
 {
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     rbfm_iter.close();
     rbfm->closeFile(fileHandle);
     return SUCCESS;
@@ -1091,7 +1223,7 @@ RC RM_ScanIterator::close()
 RC RelationManager::createIndex(const string &tableName, const string &attributeName)
 {
 	IndexManager *im = IndexManager::instance();
-    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
     string fName = getIndexName(tableName, attributeName);
     RID rid;
     RC rc;
@@ -1134,7 +1266,7 @@ RC RelationManager::createIndex(const string &tableName, const string &attribute
         if(data == NULL) { // if the attr is null for this tuple 
             continue;
         }
-        rc = im->insertEntry(ixfh, atr, (char*) data + 1, rid); // insert into the index 
+        rc = im->insertEntry(ixfh, atr, (char*) data + 1, rid); // insert into the index with no null flag
         if (rc) // error then break
             break;
     }
@@ -1166,7 +1298,48 @@ RC RelationManager::createIndex(const string &tableName, const string &attribute
 
 RC RelationManager::destroyIndex(const string &tableName, const string &attributeName)
 {
-	return -1;
+    // similar to insert 
+    IndexManager *im = IndexManager::instance();
+    RecordBasedFileManager *rbfm = RecordBasedFileManager::instance();  // for file operations like open file 
+    string fName = getIndexName(tableName, attributeName);
+    RID rid;
+    RC rc;
+
+    // remove the index from the catalog 
+    void *val =  malloc(fName.length() + 10); // leave enough room for extension
+    memset(val, 0, fName.length() + 10);
+    toAPI(fName, val); // fill val with the filename 
+
+    // scan the indexTable to find entry and remove it 
+    // setup scanner
+    RM_ScanIterator scanner;
+    vector<string> scanAttr = {INDEXES_COL_FILE_NAME};
+    // scan the index table in the filename attribute for a file name equal to this one 
+    scan(INDEXES_TABLE_NAME, INDEXES_COL_FILE_NAME, EQ_OP, val, scanAttr, scanner);
+
+    void *data = malloc(PAGE_SIZE);
+    memset(data, 0, PAGE_SIZE); // data to hold getNextTuple information in
+    while(true) {
+        rc = scanner.getNextTuple(rid, data); // should be only 1?
+        if (rc == IX_EOF) { // if at the end then everything is fine  and done
+            rc = 0;
+            break;
+        }
+        FileHandle fh; 
+        rbfm->openFile(getFileName(INDEXES_TABLE_NAME), fh); // open the index table 
+        rbfm->deleteRecord(fh, indexDescriptor, rid); // remove the record with the format of the indexDescriptor
+        rbfm->closeFile(fh); 
+    }
+
+    // destroy the file 
+    rc = im->destroyFile(fName);
+    if (rc)
+        return rc;
+    free(data);
+    free(val);
+    scanner.close();
+    return rc;
+
 }
 
 RC RelationManager::indexScan(const string &tableName,
@@ -1177,7 +1350,43 @@ RC RelationManager::indexScan(const string &tableName,
                       bool highKeyInclusive,
                       RM_IndexScanIterator &rm_IndexScanIterator)
 {
-	return -1;
+	// index scan needs: filehandle, attribute, lowKey, highkey, boolHKey, boolLKey, ixscanIter
+    IndexManager *im = IndexManager::instance(); // needed to do index scan
+    RC rc;
+    // based on previous implementations
+    // get the file name for the index and open it
+    // use the indexScanners file handler
+    rc = im->openFile(getIndexName(tableName, attributeName), rm_IndexScanIterator.ixfh);
+    if (rc) 
+        return rc;
+
+    // get the attribute to scan on
+    Attribute atr; 
+    vector<Attribute> atrVec; 
+    getAttributes(tableName, atrVec); // get all the attributes
+    for (Attribute attr : atrVec) {
+        if (atr.name == attributeName){
+            atr = attr;
+            break; // found the right one 
+        }
+    } // now we have the right attr
+
+    rc = im->scan(rm_IndexScanIterator.ixfh, atr, lowKey, highKey, lowKeyInclusive, highKeyInclusive, rm_IndexScanIterator.ix_scan);
+    return rc;
+}
+
+// "key" follows the same format as in IndexManager::insertEntry()
+RC RM_IndexScanIterator::getNextEntry(RID &rid, void *key)// Get next matching entry
+{
+    return ix_scan.getNextEntry(rid,key); // just use indexManager getNextEntry since we use their scanner anyways
+}
+RC RM_IndexScanIterator::close()
+{
+    // make sure to close the scanner and filehandle
+    ix_scan.close();
+    IndexManager *im = IndexManager::instance();
+    im->closeFile(ixfh);
+    return SUCCESS;
 }
 
 // Calculate actual bytes for nulls-indicator for the given field counts

@@ -45,7 +45,7 @@ using namespace std;
 
 #define INDEXES_TABLE_NAME          "Indexes"
 #define INDEXES_TABLE_ID             3
-
+// needs orig table name, the name of attr the idx is on, and the full name with the extension
 #define INDEXES_COL_TABLE_NAME      "table-name"
 #define INDEXES_COL_FILE_NAME_SIZE  50
 #define INDEXES_COL_ATTR_NAME_SIZE  50
@@ -107,8 +107,14 @@ class RM_IndexScanIterator {
   ~RM_IndexScanIterator() {}; 	// Destructor
 
   // "key" follows the same format as in IndexManager::insertEntry()
-  RC getNextEntry(RID &rid, void *key) {return RM_EOF;};  	// Get next matching entry
-  RC close() {return -1;};             			// Terminate index scan
+  RC getNextEntry(RID &rid, void *key);  	// Get next matching entry
+  RC close();             			// Terminate index scan'
+  friend class RelationManager;
+  private: 
+    // similar to how we did for pfm and rbfm
+    // may need more
+    IXFileHandle ixfh;
+    IX_ScanIterator ix_scan;
 };
 
 
@@ -170,6 +176,7 @@ protected:
   ~RelationManager();
 
 friend class RecordBasedFileManager;
+friend class RM_IndexScanIterator;
 private:
   static RelationManager *_rm;
   const vector<Attribute> tableDescriptor;
