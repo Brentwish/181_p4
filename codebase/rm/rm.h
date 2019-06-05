@@ -45,7 +45,7 @@ using namespace std;
 
 #define INDEXES_TABLE_NAME          "Indexes"
 #define INDEXES_TABLE_ID             3
-
+// needs orig table name, the name of attr the idx is on, and the full name with the extension
 #define INDEXES_COL_TABLE_NAME      "table-name"
 #define INDEXES_COL_FILE_NAME_SIZE  50
 #define INDEXES_COL_ATTR_NAME_SIZE  50
