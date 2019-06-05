@@ -1,12 +1,26 @@
 
 #include "qe.h"
+#include <cstring>
+
+// Calculate actual bytes for nulls-indicator for the given field counts
+int getNullIndicatorSize(int fieldCount) 
+{
+    return int(ceil((double) fieldCount / CHAR_BIT));
+}
+
+bool fieldIsNull(char *nullIndicator, int i)
+{
+    int indicatorIndex = i / CHAR_BIT;
+    int indicatorMask  = 1 << (CHAR_BIT - 1 - (i % CHAR_BIT));
+    return (nullIndicator[indicatorIndex] & indicatorMask) != 0;
+}
 
 //Here we're binding the input iterator that's passed in to Iterator iter
-//as well as the Condition struct
+//as well as the Condition
 //https://en.cppreference.com/w/cpp/language/reference_initialization
 Filter::Filter(Iterator* input, const Condition &condition) : iter(input), cond(condition) {
     //we created a private Attribute vector to hold the attrs associated with
-    //the table or index input
+    //the table or index input. use input's getAttributes to populate it
     input->getAttributes(attrs);
 }
 
@@ -21,19 +35,111 @@ RC Filter::getNextTuple(void *data) {
         //If the tuple passes the check, return
         if (include(data))
             return SUCCESS;
+        cout << "Skipped\n";
     }
     return -1;
 }
 
-int Filter::include(void *data) {
-    RelationManager *rm = RelationManager::instance();
-    vector<Attribute> attrs;
-    rm->getAttributes("left", attrs);
-    rm->printTuple(attrs, data);
-
-    return 0;
+int compareInts(CompOp op, int left, int right) {
+    switch (op) {
+        case EQ_OP: return (left == right) ? 1 : 0;
+        case LT_OP: return (left < right) ? 1 : 0;
+        case GT_OP: return (left > right) ? 1 : 0;
+        case LE_OP:
+            cout << left << ", " << right << endl;
+            return (left <= right) ? 1 : 0;
+        case GE_OP: return (left >= right) ? 1 : 0;
+        case NE_OP: return (left != right) ? 1 : 0;
+        case NO_OP: return 1;
+        default: return -1;
+    }
 }
 
+int Filter::include(void *data) {
+    RelationManager *rm = RelationManager::instance();
+    rm->printTuple(attrs, data);
+    //We need to iterate through (data, attrs) until we find the attr
+    //we are comparing on
+    int nullSize = getNullIndicatorSize(attrs.size());
+    char nullField[nullSize];
+    memset(nullField, 0, nullSize);
+    memcpy(nullField, data, nullSize);
+
+    //we'll keep a running total for the offset into data
+    int offset = nullSize;
+
+    Attribute attr;
+    for (unsigned int i = 0; i < attrs.size(); i++) {
+        attr = attrs[i];
+
+        if (fieldIsNull(nullField, i)) //data holds nothing
+            continue;
+
+        switch (attr.type) {
+            case TypeInt: offset += INT_SIZE;
+                break;
+            case TypeReal: offset += REAL_SIZE;
+                break;
+            case TypeVarChar:
+                int size = 0;
+                memcpy(&size, (char *)data + offset, INT_SIZE);
+                offset += INT_SIZE + size;
+                break;
+        }
+
+        //Once we find the attr we care about, break
+        if (attr.name == cond.lhsAttr)
+            break;
+    }
+
+    //Copy the attribute into val
+    Value val;
+    val.type = attr.type;
+    val.data = (char *)data + offset;
+
+    int test = 0;
+
+    memcpy(&test, val.data, INT_SIZE);
+    cout << test << endl;
+
+    switch (val.type) {
+        case TypeInt: {
+            int leftIval = 0;
+            int rightIval = 0;
+            memcpy(&leftIval, val.data, INT_SIZE);
+            memcpy(&rightIval, cond.rhsValue.data, INT_SIZE);
+
+            return compareInts(cond.op, leftIval, rightIval);
+        }
+        case TypeReal: {
+            float leftFval = 0;
+            float rightFval = 0;
+            memcpy(&leftFval, val.data, REAL_SIZE);
+            memcpy(&rightFval, cond.rhsValue.data, REAL_SIZE);
+
+            //return compareReals(cond.op, leftFval, rightFval);
+            return 1;
+        }
+        case TypeVarChar: {
+            int leftSize = 0;
+            int rightSize = 0;
+            memcpy(&leftSize, val.data, VARCHAR_LENGTH_SIZE);
+            memcpy(&rightSize, cond.rhsValue.data, VARCHAR_LENGTH_SIZE);
+
+            char leftSval[leftSize + 1];
+            char rightSval[rightSize + 1];
+
+            memset(leftSval, 0, leftSize + 1);
+            memset(rightSval, 0, rightSize + 1);
+            memcpy(leftSval, (char *) val.data + VARCHAR_LENGTH_SIZE, leftSize);
+            memcpy(rightSval, (char *) cond.rhsValue.data + VARCHAR_LENGTH_SIZE, rightSize);
+
+            //return compareVarChars(cond.op, leftSval, rightSval);
+            return 1;
+        }
+    }
+    return -1;
+}
 
 //void Filter::getAttributes(vector<Attribute> &attrs) const {
 //
