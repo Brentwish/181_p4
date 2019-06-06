@@ -208,7 +208,7 @@ RC INLJoin::getNextTuple(void *data)
         memset(leftTuplePage, 0, PAGE_SIZE);
         rc = leftRelation->getNextTuple(tableData); // get first tuple
         if (rc) {// if end then no tuples at all 
-            free(leftTuplePage); // first time so free this too but not other times 
+            // free(leftTuplePage); // first time so free this too but not other times 
             free(tableData);
             return rc;
         }
