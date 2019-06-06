@@ -43,7 +43,7 @@ Team number (e.g., 01) :
 3. Index Nested Loop Join
 - Describe how your Index Nested Loop Join works.
   Our Index Nested Loop Join works by the description that we had in class. 
-  We first find the tuple in the left relation R. We only go down the left tuple after we have scanned all the right ones. So we get the next right tuple, compare the tuple and if the condition attribute is the same then we combine the two tuples. Otherwise we keep searching the right index until we either reach a tuple that matches or we reach the end of the right index in which case we move down a left tuple and restart the right index. So, we follow the formula in class:
+  We first find the tuple in the left relation R. We only go down the left tuple after we have scanned all the right ones. So we get the next right tuple, compare the tuple and if the condition attribute is the same then we combine the two tuples. Otherwise we keep searching the right index until we either reach a tuple that matches or we reach the end of the right index in which case we move down a left tuple and restart the right index. We placed the tuples in hashMaps so we could get an easy lookup later when we wanted to compare the two attributes. So, we follow the formula in class:
   foreach tuple r in R do
     foreach tuple s in S where ri == sj do 
       add <r,s> to result
