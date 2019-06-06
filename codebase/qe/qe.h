@@ -241,10 +241,11 @@ class INLJoin : public Iterator {
         IndexScan *rightIndex; // iterator for the right index
         Condition joinCond; // join condition
         vector<Attribute> returnAttr; // the attributes we are returning with getAttributes
+        int leftOffset; 
 
         void *leftTuplePage; // page to hold all left tuples since we only need them once per S
 
-        void fillLeftTuples(void* leftTuple, void* finalTuple);
+        int fillLeftTuples(void* leftTuple, void* finalTuple); // returns offset
         int getNullIndicatorSize(int fieldCount);
 };
 

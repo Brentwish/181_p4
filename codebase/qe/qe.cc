@@ -178,6 +178,14 @@ INLJoin::INLJoin(Iterator *leftIn,           // Iterator of input R
     // join vector to vector 
     returnAttr.insert(std::end(returnAttr), std::begin(indexAttr), std::end(indexAttr));
     leftTuplePage = NULL;
+    leftOffset = 0;
+}
+
+INLJoin::~INLJoin()
+{
+    free(leftTuplePage);
+    returnAttr.clear;
+    leftOffset = 0;
 }
 
 void INLJoin::getAttributes(vector<Attribute> &attrs) const
@@ -190,6 +198,7 @@ RC INLJoin::getNextTuple(void *data)
     // foreach tuple r in R do
     //      foreach tuple s in S where ri == sj do 
     //          add <r,s> to result
+    RelationManager *rm = RelationManager::instance();
     RC rc;
     void *tableData = malloc(PAGE_SIZE);
     // get the tuple r in R
@@ -199,13 +208,13 @@ RC INLJoin::getNextTuple(void *data)
         memset(leftTuplePage, 0, PAGE_SIZE);
         rc = leftRelation->getNextTuple(tableData); // get first tuple
         if (rc) {// if end then no tuples at all 
-            free(leftTuplePage);
+            free(leftTuplePage); // first time so free this too but not other times 
             free(tableData);
             return rc;
         }
 
         // fill the leftTuplePage with the tuples from R
-        fillLeftTuples(tableData, leftTuplePage);
+        this->leftOffset = fillLeftTuples(tableData, leftTuplePage); // need to store the offset returned 
     }
     // need someplace to hold the data returned by the index scan
     void *indexData = malloc(PAGE_SIZE);
@@ -226,12 +235,124 @@ RC INLJoin::getNextTuple(void *data)
         }
         memset(leftTuplePage, 0, PAGE_SIZE); // reset the tuplesPage
         // fill the leftTuplePage with the tuples from R
-        fillLeftTuples(tableData, leftTuplePage);
+        this->leftOffset = fillLeftTuples(tableData, leftTuplePage);
+        rc = rightIndex->getNextTuple(indexData); // get the first tuple for the comparison forward
+        if (rc) 
+            return rc;
     }
+    else if (rc != SUCCESS) {
+        free(tableData);
+        free(indexData);
+        return rc;
+    }
+
+    // got the s tuple 
+    // compare the the s and r attributes based on condition
+    // condition has the attribute name for left and right relation
+
+    // get the right hand attributes 
+    map<string, IndexData> indexMap;
+    vector<IndexData> indexList;
+    vector<Attribute> indexAtr; 
+    leftRelation->getAttributes(indexAtr); // get the index attributes 
+    rm->formatData(indexAtr, indexData, indexList); // get the atrributes into list form
+    for (IndexData id : indexList) { // fill the map for easier lookup 
+        indexMap[id.atr.name] = id;
+    }
+    // compare
+    IndexData leftData = indexMap[joinCond.lhsAttr];
+    Attribute attr = leftData.atr;
+    int compare; 
+    switch (attr.type) {
+        case TypeInt: {
+            int leftIval = 0;
+            int rightIval = 0;
+            memcpy(&leftIval, leftData.key, INT_SIZE);
+            memcpy(&rightIval, joinCond.rhsValue.data, INT_SIZE);
+
+            compare = compareInts(joinCond.op, leftIval, rightIval);
+        }
+        case TypeReal: {
+            float leftFval = 0;
+            float rightFval = 0;
+            memcpy(&leftFval, leftData.key, REAL_SIZE);
+            memcpy(&rightFval, joinCond.rhsValue.data, REAL_SIZE);
+
+            compare = compareReals(joinCond.op, leftFval, rightFval);
+        }
+        case TypeVarChar: {
+            int leftSize = 0;
+            int rightSize = 0;
+            memcpy(&leftSize, leftData.key, VARCHAR_LENGTH_SIZE);
+            memcpy(&rightSize, joinCond.rhsValue.data, VARCHAR_LENGTH_SIZE);
+
+            char leftSval[leftSize + 1];
+            char rightSval[rightSize + 1];
+
+            memset(leftSval, 0, leftSize + 1);
+            memset(rightSval, 0, rightSize + 1);
+            memcpy(leftSval, (char *) leftData.key + VARCHAR_LENGTH_SIZE, leftSize);
+            memcpy(rightSval, (char *) joinCond.rhsValue.data + VARCHAR_LENGTH_SIZE, rightSize);
+
+            compare = compareVarChars(joinCond.op, leftSval, rightSval);
+        }
+    }
+    if (compare != 0 ) // not a valid tuple
+    {
+        free(indexData);
+        free(tableData);
+        return getNextTuple(data); // recursively call this function for the next tuple 
+    }
+    // found a valid tuple 
+    // join the left and right tuples 
+    // start inserting at where the last offset returned in leftTuplePage
+    int nullIndicatorSize = getNullIndicatorSize(returnAttr.size());
+    char nullIndicator[nullIndicatorSize];
+    memset(nullIndicator, 0, nullIndicatorSize);
+    memcpy(nullIndicator, leftTuplePage, nullIndicatorSize); // get the nullIndicator
+    int startingNullIdx = returnAttr.size() - indexAtr.size(); // where the nullIndicator index should start to account for the previous attributes
+    int offset = this->leftOffset; // start at the offset
+    for (int i =0; i < indexAtr.size(); i++) { // do all the index attributes
+        string fName = indexAtr[i].name;
+        IndexData id = indexMap[fName]; // get the data for the key 
+
+        if (id.nullKey) {
+
+            // set the bit to null
+            // similar to fieldIsNull but OR instead of AND
+            int indicatorIndex = (i + startingNullIdx) / CHAR_BIT;
+            int indicatorMask  = 1 << (CHAR_BIT - 1 - ((i + startingNullIdx) % CHAR_BIT)); // can use OR to set 
+            nullIndicator[indicatorIndex] |= indicatorMask;
+            memcpy(leftTuplePage,nullIndicator, nullIndicatorSize); // insert the new null indicator
+            continue; // no need to move offset
+        }
+
+        if (id.atr.type == TypeInt) {
+            memcpy((char*) leftTuplePage + offset, id.key, INT_SIZE);
+            offset += INT_SIZE;
+        }
+        else if (id.atr.type == TypeReal) {
+            memcpy((char*) leftTuplePage + offset, id.key, REAL_SIZE);
+            offset += REAL_SIZE;
+        }
+        else if (id.atr.type == TypeVarChar) {
+            int varLen;
+            memcpy(&varLen, (char*) id.key, VARCHAR_LENGTH_SIZE); // get the size 
+            memcpy((char*) leftTuplePage + offset, id.key, VARCHAR_LENGTH_SIZE + varLen); // copy the total key
+            offset += VARCHAR_LENGTH_SIZE;
+            offset += varLen;
+        }
+    }
+    // copy into the data 
+    memcpy(data, leftTuplePage, PAGE_SIZE);
+    free(indexData);
+    free(tableData);
+    return SUCCESS;
 }
 
-// memory work gonna need RBFM
-void INLJoin::fillLeftTuples(void* leftTuple, void* finalTuple) 
+// need RM for IndexData
+// returns offset in finalTuple
+int INLJoin::fillLeftTuples(void* leftTuple, void* finalTuple) 
 {
     RelationManager *rm = RelationManager::instance();
     // fill the final tuple with the left one 
@@ -239,9 +360,11 @@ void INLJoin::fillLeftTuples(void* leftTuple, void* finalTuple)
     // get the null indicator vector same as before
     int nullIndicatorSize = getNullIndicatorSize(returnAttr.size());
     char nullIndicator[nullIndicatorSize];
+    int offset = 0;
     memset(nullIndicator, 0, nullIndicatorSize);
+    memset(leftTuple, 0, nullIndicatorSize);
     memcpy(nullIndicator,(char*) leftTuple, nullIndicatorSize); // got the null indicators
-
+    offset += nullIndicatorSize;
 
     map<string, IndexData> dataList;
     vector<IndexData> atrList; // get all the tuples like in rm
@@ -252,14 +375,42 @@ void INLJoin::fillLeftTuples(void* leftTuple, void* finalTuple)
     for (IndexData id: atrList) {
         dataList[id.atr.name] = id;
     }
-    // for each attribute append it to the finalTuple
+    // for each left attribute append it to the finalTuple
+    // similar to inserting into index
     int i=0;
-    for (i =0; i < returnAttr.size(); i++) 
+    for (i =0; i < leftAtr.size(); i++) 
     {
         // get the name of the attr and then type
-        
-    }
+        string fName = leftAtr[i].name; // get the name
+        IndexData id = dataList[fName];
 
+        if (id.nullKey) { // attr is null
+            // set the bit to null
+            // similar to fieldIsNull but OR instead of AND
+            int indicatorIndex = i / CHAR_BIT;
+            int indicatorMask  = 1 << (CHAR_BIT - 1 - (i % CHAR_BIT)); // can use OR to set 
+            nullIndicator[indicatorIndex] |= indicatorMask;
+            memcpy(nullIndicator,(char*) leftTuple, nullIndicatorSize); // insert the new null indicator
+            continue; // no need to move offset 
+        }
+
+        if (id.atr.type == TypeInt) {
+            memcpy((char*) finalTuple + offset, id.key, INT_SIZE);
+            offset += INT_SIZE;
+        }
+        else if (id.atr.type == TypeReal) {
+            memcpy((char*) finalTuple + offset, id.key, REAL_SIZE);
+            offset += REAL_SIZE;
+        }
+        else if (id.atr.type == TypeVarChar) {
+            int varLen;
+            memcpy(&varLen, (char*) id.key, VARCHAR_LENGTH_SIZE); // get the size 
+            memcpy((char*) finalTuple + offset, id.key, VARCHAR_LENGTH_SIZE + varLen); // copy the total key
+            offset += VARCHAR_LENGTH_SIZE;
+            offset += varLen;
+        }
+    }
+    return offset;
 }           
 
 // Calculate actual bytes for nulls-indicator for the given field counts
