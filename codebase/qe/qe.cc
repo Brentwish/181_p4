@@ -255,13 +255,23 @@ RC INLJoin::getNextTuple(void *data)
     map<string, IndexData> indexMap;
     vector<IndexData> indexList;
     vector<Attribute> indexAtr; 
-    leftRelation->getAttributes(indexAtr); // get the index attributes 
+    rightIndex->getAttributes(indexAtr); // get the index attributes 
     rm->formatData(indexAtr, indexData, indexList); // get the atrributes into list form
     for (IndexData id : indexList) { // fill the map for easier lookup 
         indexMap[id.atr.name] = id;
     }
+    map<string, IndexData> leftMap;
+    vector<IndexData> leftList;
+    vector<Attribute> leftAtr; 
+    leftRelation->getAttributes(leftAtr); // get the index attributes 
+    rm->formatData(leftAtr, tableData, leftList); // get the atrributes into list form
+    for (IndexData id : leftList) { // fill the map for easier lookup 
+        leftMap[id.atr.name] = id;
+    }
+
     // compare
-    IndexData leftData = indexMap[joinCond.lhsAttr];
+    IndexData leftData = leftMap[joinCond.lhsAttr];
+    IndexData rightData = indexMap[joinCond.rhsAttr];
     Attribute attr = leftData.atr;
     int compare; 
     switch (attr.type) {
@@ -269,7 +279,7 @@ RC INLJoin::getNextTuple(void *data)
             int leftIval = 0;
             int rightIval = 0;
             memcpy(&leftIval, leftData.key, INT_SIZE);
-            memcpy(&rightIval, joinCond.rhsValue.data, INT_SIZE);
+            memcpy(&rightIval, rightData.key, INT_SIZE);
 
             compare = compareInts(joinCond.op, leftIval, rightIval);
         }
@@ -277,7 +287,7 @@ RC INLJoin::getNextTuple(void *data)
             float leftFval = 0;
             float rightFval = 0;
             memcpy(&leftFval, leftData.key, REAL_SIZE);
-            memcpy(&rightFval, joinCond.rhsValue.data, REAL_SIZE);
+            memcpy(&rightFval, rightData.key, REAL_SIZE);
 
             compare = compareReals(joinCond.op, leftFval, rightFval);
         }
@@ -285,7 +295,7 @@ RC INLJoin::getNextTuple(void *data)
             int leftSize = 0;
             int rightSize = 0;
             memcpy(&leftSize, leftData.key, VARCHAR_LENGTH_SIZE);
-            memcpy(&rightSize, joinCond.rhsValue.data, VARCHAR_LENGTH_SIZE);
+            memcpy(&rightSize, rightData.key, VARCHAR_LENGTH_SIZE);
 
             char leftSval[leftSize + 1];
             char rightSval[rightSize + 1];
@@ -293,7 +303,7 @@ RC INLJoin::getNextTuple(void *data)
             memset(leftSval, 0, leftSize + 1);
             memset(rightSval, 0, rightSize + 1);
             memcpy(leftSval, (char *) leftData.key + VARCHAR_LENGTH_SIZE, leftSize);
-            memcpy(rightSval, (char *) joinCond.rhsValue.data + VARCHAR_LENGTH_SIZE, rightSize);
+            memcpy(rightSval, (char *) rightData.key + VARCHAR_LENGTH_SIZE, rightSize);
 
             compare = compareVarChars(joinCond.op, leftSval, rightSval);
         }
