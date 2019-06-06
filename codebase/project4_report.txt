@@ -2,8 +2,8 @@
 Team number (e.g., 01) : 
 #1 Student ID : 1477888
 #1 Student Name : Jaisal Singh
-#2 Student ID : 
-#2 Student Name : 
+#2 Student ID : 1597286
+#2 Student Name : Brent Wishart
 #3 Student ID : 
 #3 Student Name : 
 
@@ -54,6 +54,9 @@ Team number (e.g., 01) :
 - Have you implemented any optional features? Then, describe them here.
 
 - Other implementation details:
+
+- Filter
+    Filter takes as input a reference to an iterator (either a TableScan or IndexScan). We use that iterator to go through each of the tuples in its associated table. We get the vector of attributes from the iterator and use its getNextEntry() method to populate *data in the API format. We loop through the attributes and maintain an offset into data. Once we find the attribute that matches the lhsAttr, we determine if its value passes the comparator. If it does, we return SUCCESS, otherwise we pass over it. If iter returns EOF, then filter returns EOF.
 
 
 5. Other (optional)
