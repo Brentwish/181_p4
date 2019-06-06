@@ -2,6 +2,7 @@
 #define _qe_h_
 
 #include <vector>
+#include <cstring>
 
 #include "../rbf/rbfm.h"
 #include "../rm/rm.h"
@@ -229,6 +230,16 @@ class INLJoin : public Iterator {
         RC getNextTuple(void *data){return QE_EOF;};
         // For attribute in vector<Attribute>, name it as rel.attr
         void getAttributes(vector<Attribute> &attrs) const{};
+    private:
+        Iterator *leftRelation; // iterator for the left table
+        IndexScan *rightIndex; // iterator for the right index
+        Condition joinCond; // join condition
+        vector<Attribute> returnAttr; // the attributes we are returning with getAttributes
+
+        void *leftTuplePage; // page to hold all left tuples since we only need them once per S
+
+        void fillLeftTuples(void* leftTuple, void* finalTuple);
+        int getNullIndicatorSize(int fieldCount);
 };
 
 

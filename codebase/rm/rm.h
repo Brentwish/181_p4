@@ -177,6 +177,7 @@ protected:
 
 friend class RecordBasedFileManager;
 friend class RM_IndexScanIterator;
+friend class INLJoin;
 private:
   static RelationManager *_rm;
   const vector<Attribute> tableDescriptor;
