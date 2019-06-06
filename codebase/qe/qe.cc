@@ -167,9 +167,6 @@ INLJoin::INLJoin(Iterator *leftIn,           // Iterator of input R
 {
     this->leftRelation = leftIn;
     this->rightIndex = rightIn;
-    Condition tempCond;
-    tempCond.rhsValue.data = &(condition.rhsValue); // modify the type to be the one we have 
-    tempCond.rhsValue.type = TypeVarChar; // done but not needed? 
     this->joinCond = condition; // create the copies
 
 
