@@ -1365,7 +1365,7 @@ RC RelationManager::indexScan(const string &tableName,
     vector<Attribute> atrVec; 
     getAttributes(tableName, atrVec); // get all the attributes
     for (Attribute attr : atrVec) {
-        if (atr.name == attributeName){
+        if (attr.name == attributeName){
             atr = attr;
             break; // found the right one 
         }
