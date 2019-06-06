@@ -184,7 +184,7 @@ INLJoin::INLJoin(Iterator *leftIn,           // Iterator of input R
 INLJoin::~INLJoin()
 {
     free(leftTuplePage);
-    returnAttr.clear;
+    returnAttr.clear();
     leftOffset = 0;
 }
 
