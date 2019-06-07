@@ -4,8 +4,8 @@ Team number (e.g., 01) :
 #1 Student Name : Jaisal Singh
 #2 Student ID : 1597286
 #2 Student Name : Brent Wishart
-#3 Student ID : 
-#3 Student Name : 
+#3 Student ID : 1479695
+#3 Student Name : Ray Zhao
 
 
 2. Catalog information about Index
