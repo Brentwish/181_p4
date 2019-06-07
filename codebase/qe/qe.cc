@@ -180,6 +180,7 @@ INLJoin::INLJoin(Iterator *leftIn,           // Iterator of input R
     returnAttr.insert(std::end(returnAttr), std::begin(indexAttr), std::end(indexAttr));
     leftTuplePage = NULL;
     tableData = malloc(PAGE_SIZE);
+    indexData = malloc(PAGE_SIZE);
     leftOffset = 0;
 }
 
@@ -187,6 +188,7 @@ INLJoin::~INLJoin()
 {
     free(leftTuplePage);
     free(tableData);
+    free(indexData);
     leftTuplePage = NULL;
     returnAttr.clear();
     leftOffset = 0;
@@ -221,14 +223,14 @@ RC INLJoin::getNextTuple(void *data)
         this->leftOffset = fillLeftTuples(tableData, leftTuplePage); // need to store the offset returned 
     }
     // need someplace to hold the data returned by the index scan
-    void *indexData = malloc(PAGE_SIZE);
+    // void *indexData = malloc(PAGE_SIZE); // trying so maybe memory errors go away?
     memset(indexData, 0, PAGE_SIZE);
 
     // get the tuple s in S
     rc = rightIndex->getNextTuple(indexData);
     // return and move down the left relation since its every s for r
     if (rc == QE_EOF) { // the scan has reached its end 
-        free(indexData);
+        // free(indexData);
         // use the method from the header to restart scan
         rightIndex->setIterator(NULL,NULL,true,true); // create an iterator without any restrictions
         // move the left column down one
@@ -244,7 +246,6 @@ RC INLJoin::getNextTuple(void *data)
             return rc;
     }
     else if (rc != SUCCESS) {
-        free(indexData);
         return rc;
     }
 
@@ -312,9 +313,9 @@ RC INLJoin::getNextTuple(void *data)
             break;
         }
     }
-    if (compare != 0 ) // not a valid tuple
+    // compare 0 means the comparison was false 
+    if (compare == 0 ) // not a valid tuple
     {
-        free(indexData);
         return getNextTuple(data); // recursively call this function for the next tuple 
     }
     // found a valid tuple 
@@ -359,7 +360,6 @@ RC INLJoin::getNextTuple(void *data)
     }
     // copy into the data 
     memcpy(data, leftTuplePage, PAGE_SIZE);
-    free(indexData);
     return SUCCESS;
 }
 
