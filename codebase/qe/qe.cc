@@ -159,6 +159,89 @@ int Filter::include(void *data) {
 //
 //}
 
+Project::Project(Iterator *input, const vector<string> &attrNames)
+: input(input)
+{
+    input->getAttributes(inputAttr);
+    // return attributes in attrNames
+    for (string n : attrNames)
+    {
+        for (Attribute a : inputAttr)
+        {
+            if (a.name == n)
+            {
+                returnAttr.push_back(a);
+                break;
+            }
+        }
+    }
+    indexData = malloc(PAGE_SIZE);
+}
+Project::~Project()
+{
+    free(indexData);
+}
+
+RC Project::getNextTuple(void *data)
+{
+    RelationManager *rm = RelationManager::instance();
+    // get the input attribute
+    if (input->getNextTuple(indexData) == QE_EOF)
+        return QE_EOF;
+
+    // attributes in list form
+    map<string, IndexData> indexMap;
+    vector<IndexData> atrList;
+    rm->formatData(inputAttr, indexData, atrList);
+
+    // fill the map
+    for (IndexData id : atrList)
+    {
+        indexMap[id.atr.name] = id;
+    }
+
+    // check size
+    int nullIndicatorSize = getNullIndicatorSize(returnAttr.size());
+    unsigned offset = nullIndicatorSize;
+
+    // compare attributes 
+    for (unsigned i = 0; i < returnAttr.size(); i++)
+    {
+        string indexMapName = returnAttr[i].name;
+        IndexData atrList = indexMap[indexMapName];
+
+        if (atrList.nullKey)
+        {
+            fieldIsNull((char*)data, i);
+            continue;
+        }
+
+        if (atrList.atr.type == TypeInt)
+        {
+            memcpy((char*)data + offset, atrList.key, INT_SIZE);
+            offset += INT_SIZE;
+        }
+        else if (atrList.atr.type == TypeReal)
+        {
+            memcpy((char*)data + offset, atrList.key, REAL_SIZE);
+            offset += REAL_SIZE;
+        }
+        else
+        {
+            int32_t length;
+            memcpy(&length, atrList.key, VARCHAR_LENGTH_SIZE);
+            memcpy((char*)data + offset, atrList.key, VARCHAR_LENGTH_SIZE + length);
+            offset += VARCHAR_LENGTH_SIZE + length;
+        }
+    }
+    return SUCCESS;
+}
+
+void Project::getAttributes(vector<Attribute> &attrs) const
+{
+    attrs = returnAttr;
+}
+
 // ... the rest of your implementations go here
 INLJoin::INLJoin(Iterator *leftIn,           // Iterator of input R
                IndexScan *rightIn,          // IndexScan Iterator of input S

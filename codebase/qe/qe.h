@@ -210,19 +210,22 @@ class Filter : public Iterator {
         int include(void *data);
 };
 
-
 class Project : public Iterator {
     // Projection operator
     public:
         Project(Iterator *input,                    // Iterator of input R
-              const vector<string> &attrNames){};   // vector containing attribute names
-        ~Project(){};
+              const vector<string> &attrNames);   // vector containing attribute names
+        ~Project();
 
-        RC getNextTuple(void *data) {return QE_EOF;};
-        // For attribute in vector<Attribute>, name it as rel.attr
-        void getAttributes(vector<Attribute> &attrs) const{};
+        RC getNextTuple(void *data);
+        void getAttributes(vector<Attribute> &attrs) const;
+
+    private:
+        Iterator *input;
+        vector<Attribute> inputAttr;
+        vector<Attribute> returnAttr;
+        void *indexData;
 };
-
 
 class INLJoin : public Iterator {
     // Index nested-loop join operator
