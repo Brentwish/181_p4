@@ -338,28 +338,29 @@ RC INLJoin::getNextTuple(void *data)
             int indicatorIndex = (i + startingNullIdx) / CHAR_BIT;
             int indicatorMask  = 1 << (CHAR_BIT - 1 - ((i + startingNullIdx) % CHAR_BIT)); // can use OR to set 
             nullIndicator[indicatorIndex] |= indicatorMask;
-            memcpy(leftTuplePage,nullIndicator, nullIndicatorSize); // insert the new null indicator
+            memcpy(data,nullIndicator, nullIndicatorSize); // insert the new null indicator
             continue; // no need to move offset
         }
 
         if (id.atr.type == TypeInt) {
-            memcpy((char*) leftTuplePage + offset, id.key, INT_SIZE);
+            memcpy((char*) data + offset, id.key, INT_SIZE);
             offset += INT_SIZE;
         }
         else if (id.atr.type == TypeReal) {
-            memcpy((char*) leftTuplePage + offset, id.key, REAL_SIZE);
+            memcpy((char*) data + offset, id.key, REAL_SIZE);
             offset += REAL_SIZE;
         }
         else if (id.atr.type == TypeVarChar) {
             int varLen;
             memcpy(&varLen, (char*) id.key, VARCHAR_LENGTH_SIZE); // get the size 
-            memcpy((char*) leftTuplePage + offset, id.key, VARCHAR_LENGTH_SIZE + varLen); // copy the total key
+            memcpy((char*) data + offset, id.key, VARCHAR_LENGTH_SIZE + varLen); // copy the total key
             offset += VARCHAR_LENGTH_SIZE;
             offset += varLen;
         }
     }
     // copy into the data 
-    memcpy(data, leftTuplePage, PAGE_SIZE);
+    // memcpy(data, leftTuplePage, PAGE_SIZE); // causes error so just going to write into data immediately 
+    memcpy(data, leftTuplePage, leftOffset); // can copy the size of the first tuples into data 
     return SUCCESS;
 }
 
