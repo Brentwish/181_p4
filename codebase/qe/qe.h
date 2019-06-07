@@ -244,6 +244,7 @@ class INLJoin : public Iterator {
         int leftOffset; 
 
         void *leftTuplePage; // page to hold all left tuples since we only need them once per S
+        void *tableData;
 
         int fillLeftTuples(void* leftTuple, void* finalTuple); // returns offset
         int getNullIndicatorSize(int fieldCount);

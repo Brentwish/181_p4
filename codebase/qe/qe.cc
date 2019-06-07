@@ -179,12 +179,15 @@ INLJoin::INLJoin(Iterator *leftIn,           // Iterator of input R
     // join vector to vector 
     returnAttr.insert(std::end(returnAttr), std::begin(indexAttr), std::end(indexAttr));
     leftTuplePage = NULL;
+    tableData = malloc(PAGE_SIZE);
     leftOffset = 0;
 }
 
 INLJoin::~INLJoin()
 {
     free(leftTuplePage);
+    free(tableData);
+    leftTuplePage = NULL;
     returnAttr.clear();
     leftOffset = 0;
 }
@@ -201,7 +204,8 @@ RC INLJoin::getNextTuple(void *data)
     //          add <r,s> to result
     RelationManager *rm = RelationManager::instance();
     RC rc;
-    void *tableData = malloc(PAGE_SIZE);
+    // void *tableData = malloc(PAGE_SIZE); // need to store in the object because it'll be reset everytime
+
     // get the tuple r in R
     if (leftTuplePage == NULL) { // means there hasn't been a r tuple seen before
         // create a page to hold the leftTuple that will get s tuples appended to it
@@ -210,7 +214,6 @@ RC INLJoin::getNextTuple(void *data)
         rc = leftRelation->getNextTuple(tableData); // get first tuple
         if (rc) {// if end then no tuples at all 
             // free(leftTuplePage); // first time so free this too but not other times 
-            free(tableData);
             return rc;
         }
 
@@ -231,7 +234,6 @@ RC INLJoin::getNextTuple(void *data)
         // move the left column down one
         rc = leftRelation->getNextTuple(tableData);
         if (rc) {// if at end
-            free(tableData); // free memory
             return rc; // return the EOF code
         }
         memset(leftTuplePage, 0, PAGE_SIZE); // reset the tuplesPage
@@ -242,7 +244,6 @@ RC INLJoin::getNextTuple(void *data)
             return rc;
     }
     else if (rc != SUCCESS) {
-        free(tableData);
         free(indexData);
         return rc;
     }
@@ -282,6 +283,7 @@ RC INLJoin::getNextTuple(void *data)
             memcpy(&rightIval, rightData.key, INT_SIZE);
 
             compare = compareInts(joinCond.op, leftIval, rightIval);
+            break;
         }
         case TypeReal: {
             float leftFval = 0;
@@ -290,6 +292,7 @@ RC INLJoin::getNextTuple(void *data)
             memcpy(&rightFval, rightData.key, REAL_SIZE);
 
             compare = compareReals(joinCond.op, leftFval, rightFval);
+            break;
         }
         case TypeVarChar: {
             int leftSize = 0;
@@ -306,12 +309,12 @@ RC INLJoin::getNextTuple(void *data)
             memcpy(rightSval, (char *) rightData.key + VARCHAR_LENGTH_SIZE, rightSize);
 
             compare = compareVarChars(joinCond.op, leftSval, rightSval);
+            break;
         }
     }
     if (compare != 0 ) // not a valid tuple
     {
         free(indexData);
-        free(tableData);
         return getNextTuple(data); // recursively call this function for the next tuple 
     }
     // found a valid tuple 
@@ -321,7 +324,7 @@ RC INLJoin::getNextTuple(void *data)
     char nullIndicator[nullIndicatorSize];
     memset(nullIndicator, 0, nullIndicatorSize);
     memcpy(nullIndicator, leftTuplePage, nullIndicatorSize); // get the nullIndicator
-    int startingNullIdx = returnAttr.size() - indexAtr.size(); // where the nullIndicator index should start to account for the previous attributes
+    int startingNullIdx = returnAttr.size() - leftAtr.size(); // where the nullIndicator index should start to account for the left attributes
     int offset = this->leftOffset; // start at the offset
     for (int i =0; i < indexAtr.size(); i++) { // do all the index attributes
         string fName = indexAtr[i].name;
@@ -357,7 +360,6 @@ RC INLJoin::getNextTuple(void *data)
     // copy into the data 
     memcpy(data, leftTuplePage, PAGE_SIZE);
     free(indexData);
-    free(tableData);
     return SUCCESS;
 }
 
